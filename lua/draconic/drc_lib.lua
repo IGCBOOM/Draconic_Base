@@ -2087,13 +2087,19 @@ function DRC:GetVelocityPose(ent, mul, doset)
 end
 
 hook.Add("UpdateAnimation", "DRC_MoveBlendWithoutRootMotion", function(ply, vel, msgs)
+	if CLIENT and ply == LocalPlayer() then
+		EnhancedCameraTwo:Think(msgs)
+	end
 	if ply:LookupPoseParameter("drc_move_x") != -1 && ply:LookupPoseParameter("drc_move_y") != -1 then
-	local x, y, z = DRC:GetVelocityPose(ply, false)
-			
-	ply:SetPoseParameter("drc_move_x", x)
-	ply:SetPoseParameter("drc_move_y", y)
-	if CLIENT then ply:InvalidateBoneCache() end
-	return true
+		local x, y, z = DRC:GetVelocityPose(ply, false)
+
+		ply:SetPoseParameter("drc_move_x", x)
+		ply:SetPoseParameter("drc_move_y", y)
+
+		if CLIENT then
+			ply:InvalidateBoneCache()
+		end
+		return true
 	end
 end)
 
@@ -2844,6 +2850,15 @@ function DRC:GetFloorMat(ply)
 	return fmat
 end
 
+-- API for passing in a custom trace
+function DRC:GetFloorMatCTrace(ply, trace)
+	local fmat
+	if trace.Hit then fmat = trace.SurfaceProps end
+	if !fmat then fmat = ply:GetTouchTrace().SurfaceProps end
+	fmat = DRC:SurfacePropToEnum(util.GetSurfacePropName(fmat))
+	return fmat
+end
+
 local fsmodes = {
 	"run",
 	"walk",
@@ -2856,6 +2871,13 @@ local fsvols = {
 	0.4,
 	0.35,
 	0.75
+}
+
+local fslvls = {
+	73,
+	75,
+	77,
+	79
 }
 
 local function ProcessInput(ply, shuffle, key)
@@ -2879,12 +2901,21 @@ local function SelectFootstep(ply, shuffle, fs, jump, wade, landing, overlay)
 	if landing then shuffle = true end
 	local input = ProcessInput(ply, shuffle)
 	local fmat = DRC:GetFloorMat(ply)
-	local sel, smat, subset, sel2, vol, om
+	local sel, smat, subset, sel2, vol, lvl, pitch, om
 	local set = DRC.FootSteps[fs]
+
+	local mode = fsmodes[input]
+
 	vol = fsvols[input] or 0.5
-	local volm = fsmodes[input]
-	if set.Volumes then volm = set.Volumes[volm] or 1 else volm = 1 end
+	local volm
+	if set.Volumes then volm = set.Volumes[mode] or 1 else volm = 1 end
 	vol = vol * volm
+
+	lvl = fslvls[input] or 75
+	if set.Levels then lvl = set.Levels[mode] or 75 end
+
+	pitch = 100
+	if set.Pitches then pitch = set.Pitches[mode] or 100 end
 	
 	if wade then fmat = "MAT_WADE" end
 	if !shuffle then subset = fsmodes[input]
@@ -2903,11 +2934,16 @@ local function SelectFootstep(ply, shuffle, fs, jump, wade, landing, overlay)
 		if set[subset][fmat] then sel = set[subset][fmat] end
 		
 		if !sel && om != 0 then
-			smat = DRC.SurfacePropDefinitions[fmat][1]
+			matDef = DRC.SurfacePropDefinitions[fmat] or DRC.SurfacePropDefinitions["MAT_DEFAULT"]
+			smat = matDef[1]
 			sel = smat or "default"
 			smat = smat or "default"
 			if !set[subset][sel] then sel = "default" end
 			
+			if ply:GetMoveType() == MOVETYPE_LADDER then
+				local ladder = "".. sel .."_ladder"
+				if set[subset][ladder] then sel = ladder else sel = "default_ladder" end
+			end
 			if shuffle then
 				shuffle = "".. sel .."_shuffle"
 				if landing && set[subset]["".. sel .."_land"] then shuffle = "".. sel .."_land" end
@@ -2931,6 +2967,10 @@ local function SelectFootstep(ply, shuffle, fs, jump, wade, landing, overlay)
 			sel = fmat
 			smat = DRC.SurfacePropDefinitions[fmat][1]
 			smat = smat or "default"
+			if ply:GetMoveType() == MOVETYPE_LADDER then
+				local ladder = "".. fmat .."_ladder"
+				if set[subset][ladder] then sel = ladder else sel = "default_ladder" end
+			end
 			if shuffle then
 				shuffle = "".. fmat .."_shuffle"
 				if landing && set[subset]["".. fmat .."_land"] then shuffle = "".. fmat .."_land" end
@@ -2959,11 +2999,140 @@ local function SelectFootstep(ply, shuffle, fs, jump, wade, landing, overlay)
 		if om == 0 then sel = "" end
 		
 		local finalvol
+		local finallvl
+		local finalpitch
 		if smat then finalvol = "".. smat .."_volume" else finalvol = 1 end
 		if set[subset][finalvol] then vol = vol * set[subset][finalvol] end
+		if smat then finallvl = "".. smat .."_level" else finallvl = 75 end -- See https://wiki.facepunch.com/gmod/Enums/SNDLVL
+		if set[subset][finallvl] then lvl = set[subset][finallvl] or 75 end
+		if smat then finalpitch = "".. smat .."_pitch" else finalpitch = 100 end
+		if set[subset][finalpitch] then pitch = set[subset][finalpitch] or 100 end
 	end
 	if !vol then vol = 0.5 end
-	return sel, sel2, vol, om
+	return sel, sel2, vol, lvl, pitch, om
+end
+
+function DRC:SelectFootstepAPI(ply, shuffle, fs, jump, wade, landing, overlay)
+	return SelectFootstep(ply, shuffle, fs, jump, wade, landing, overlay)
+end
+
+-- for compat with anim based footsteps
+function DRC:SelectFootstepCTrace(ply, trace, shuffle, fs, jump, wade, landing, overlay)
+	if IsValid(ply:GetVehicle()) then return "", "", 1, 1 end
+	if !fs or string.lower(fs) == "none" then return "" end
+	if landing then shuffle = true end
+	local input = ProcessInput(ply, shuffle)
+	local fmat = DRC:GetFloorMatCTrace(ply, trace)
+	local sel, smat, subset, sel2, vol, lvl, pitch, om
+	local set = DRC.FootSteps[fs]
+
+	local mode = fsmodes[input]
+
+	vol = fsvols[input] or 0.5
+	local volm
+	if set.Volumes then volm = set.Volumes[mode] or 1 else volm = 1 end
+	vol = vol * volm
+
+	lvl = fslvls[input] or 75
+	if set.Levels then lvl = set.Levels[mode] or 75 end
+
+	pitch = 100
+	if set.Pitches then pitch = set.Pitches[mode] or 100 end
+	
+	if wade then fmat = "MAT_WADE" end
+	if !shuffle then subset = fsmodes[input]
+	else subset = "shuffle" end
+	if fmat == "MAT_DEFAULT_SILENT" then
+		fmat = nil
+		sel = ""
+		sel2 = ""
+	end
+	
+	if fmat then
+		if fmat == "MAT_" then fmat = "MAT_DEFAULT" end
+		om = set.OverrideMode
+		local ogsubset = subset
+		if set[subset] == nil then subset = "run" end
+		if set[subset][fmat] then sel = set[subset][fmat] end
+		
+		if !sel && om != 0 then
+			matDef = DRC.SurfacePropDefinitions[fmat] or DRC.SurfacePropDefinitions["MAT_DEFAULT"]
+			smat = matDef[1]
+			--smat = DRC.SurfacePropDefinitions[fmat][1]
+			sel = smat or "default"
+			smat = smat or "default"
+			if !set[subset][sel] then sel = "default" end
+			
+			if ply:GetMoveType() == MOVETYPE_LADDER then
+				local ladder = "".. sel .."_ladder"
+				if set[subset][ladder] then sel = ladder else sel = "default_ladder" end
+			end
+			if shuffle then
+				shuffle = "".. sel .."_shuffle"
+				if landing && set[subset]["".. sel .."_land"] then shuffle = "".. sel .."_land" end
+				if set[subset][shuffle] then sel = shuffle end
+			end
+			if jump then
+				jump = "".. sel .."_jump"
+				if set[subset][jump] then sel = jump else sel = "default_jump" end
+			end
+			if overlay then
+				overlay = "".. sel .."_overlay"
+				if set[subset][overlay] then sel2 = overlay else sel2 = "overlay" end
+			end
+			
+			sel = set[subset][sel] or set[subset].default
+			if !sel then sel = set[subset][sel] or set[subset].default end
+			if !sel then sel = set.run[smat] or set.run.default end
+			
+			
+		elseif sel then -- MAT_ override
+			sel = fmat
+			smat = DRC.SurfacePropDefinitions[fmat][1]
+			smat = smat or "default"
+			if ply:GetMoveType() == MOVETYPE_LADDER then
+				local ladder = "".. fmat .."_ladder"
+				if set[subset][ladder] then sel = ladder else sel = "default_ladder" end
+			end
+			if shuffle then
+				shuffle = "".. fmat .."_shuffle"
+				if landing && set[subset]["".. fmat .."_land"] then shuffle = "".. fmat .."_land" end
+				if set[subset][shuffle] then sel = shuffle end
+			end
+			if jump then
+				jump = "".. fmat .."_jump"
+				if set[subset][jump] then sel = jump else sel = "default_jump" end
+			end
+			if overlay then
+				overlay = "".. fmat .."_overlay"
+				if set[subset][overlay] then sel2 = overlay else sel2 = "overlay" end
+			end
+			
+			sel = set[subset][sel] or set[subset].default
+			if !sel then sel = set[subset][sel] or set[subset].default end
+			if !sel then sel = set.run[smat] or set.run.default end
+			
+			sel = sel[math.Round(math.Rand(0.5, #sel))]
+		end
+		
+		if !istable(sel2) then sel2 = set[subset][sel2] or set[subset].overlay end
+		if istable(sel) then sel = sel[math.Round(math.Rand(0.5, #sel))] end
+		if istable(sel2) then sel2 = sel2[math.Round(math.Rand(0.5, #sel2))] end
+		
+		if om == 0 then sel = "" end
+		
+		local finalvol
+		local finallvl
+		local finalpitch
+		if smat then finalvol = "".. smat .."_volume" else finalvol = 1 end
+		if set[subset][finalvol] then vol = vol * set[subset][finalvol] end
+		if smat then finallvl = "".. smat .."_level" else finallvl = 75 end -- See https://wiki.facepunch.com/gmod/Enums/SNDLVL
+		if set[subset][finallvl] then lvl = set[subset][finallvl] or 75 end
+		if smat then finalpitch = "".. smat .."_pitch" else finalpitch = 100 end
+		if set[subset][finalpitch] then pitch = set[subset][finalpitch] or 100 end
+	end
+	if !vol then vol = 0.5 end
+	return sel, sel2, vol, lvl, pitch, om
 end
 
 hook.Add( "KeyRelease", "DRC_FootStepShuffle", function(ply, key)
@@ -2973,17 +3142,17 @@ hook.Add( "KeyRelease", "DRC_FootStepShuffle", function(ply, key)
 		local inp = ply:KeyDown(n) or ply:KeyDown(s) or ply:KeyDown(e) or ply:KeyDown(w)
 		local fs = DRC:GetFootsteps(ply)
 		if fs && !inp then
-			local ss, so, vol, om = SelectFootstep(ply, true, fs, false, false, false, false)
+			local ss, so, vol, lvl, pitch, om = SelectFootstep(ply, true, fs, false, false, false, false)
 			if !ply.fsshuffletime then ply.fsshuffletime = CurTime() end
 			if ply.fsshuffletime + 0.2 < CurTime() && ply:OnGround() then
 				ply.fsshuffletime = CurTime()
 				timer.Simple(0.1, function()
-					vol = 100 * vol
+					--vol = 100 * vol
 					if IsValid(ply) then
-						ply:EmitSound(ss, vol)
+						ply:EmitSound(ss, lvl, pitch, vol)
 						if ply:WaterLevel() >= 1 then
-							ss, so, vol, om = SelectFootstep(ply, true, fs, ply:KeyPressed(IN_JUMP), true)
-							ply:EmitSound(ss, vol)
+							ss, so, vol, lvl, pitch, om = SelectFootstep(ply, true, fs, ply:KeyPressed(IN_JUMP), true)
+							ply:EmitSound(ss, lvl, pitch, vol)
 						end
 					end
 				end)
@@ -3015,21 +3184,21 @@ local wades2 = {
 }
 
 hook.Add("PlayerFootstep", "DRC_FootStepSets", function(ply, pos, foot, snd, vol, filt)
-	if CLIENT or game.SinglePlayer() then
+	if (CLIENT or game.SinglePlayer()) and !GetConVar("anim_footsteps_enabled"):GetBool() then
 		local fs = DRC:GetFootsteps(ply)
 		if fs then
-			local ss, so, vol, om = SelectFootstep(ply, false, fs, ply:KeyPressed(IN_JUMP), false, false, true)
+			local ss, so, vol, lvl, pitch, om = SelectFootstep(ply, false, fs, ply:KeyPressed(IN_JUMP), false, false, true)
 			local n,s,e,w = IN_FORWARD, IN_BACK, IN_MOVERIGHT, IN_MOVELEFT
 			local inp = ply:KeyDown(n) or ply:KeyDown(s) or ply:KeyDown(e) or ply:KeyDown(w)
-			vol = 100 * vol
-			if CLIENT && ply != LocalPlayer() then vol = vol * 1.25 end
-			if ss then ply:EmitSound(ss, vol) end
-			if so then ply:EmitSound(so, vol) end
+			--vol = 100 * vol
+			--if CLIENT && ply != LocalPlayer() then vol = vol * 1.25 end
+			if ss then ply:EmitSound(ss, lvl, pitch, vol) end
+			if so then ply:EmitSound(so, lvl, pitch, vol) end
 			if ply:WaterLevel() >= 1 then
 				local water = DRC.FootSteps[fs].run.water
 				ss = SelectFootstep(ply, false, fs, ply:KeyPressed(IN_JUMP), true)
 				if !water then ss = wades2[math.Round(math.Rand(0.5, #wades2))] end
-				ply:EmitSound(ss, vol)
+				ply:EmitSound(ss, lvl, pitch, vol)
 			end
 			if om == 1 then return true end
 		end
@@ -3043,9 +3212,9 @@ hook.Add("EntityEmitSound", "DRC_Footsteps_Wade", function(tbl)
 		local fs = DRC:GetFootsteps(ply)
 		if fs && DRC.FootSteps[fs].run.water then
 			if wades[tbl.SoundName] then
-				local ss = SelectFootstep(ply, true, fs, false, true)
+				local ss, so, vol, lvl, pitch, om = SelectFootstep(ply, true, fs, false, true)
 				if ss then
-					ply:EmitSound(ss)
+					ply:EmitSound(ss, lvl, pitch, vol)
 				return false end
 			end
 		end
@@ -3055,8 +3224,8 @@ end)
 local function landingsound(ply, fs)
 	ply:StopSound("player/pl_fallpain1.wav")
 	ply:StopSound("player/pl_fallpain3.wav")
-	local ss, so, vol, om = SelectFootstep(ply, false, fs, false, false, true)
-	if ss then ply:EmitSound(ss, vol) end
+	local ss, so, vol, lvl, pitch, om = SelectFootstep(ply, false, fs, false, false, true)
+	if ss then ply:EmitSound(ss, lvl, pitch, vol) end
 end
 
 hook.Add("OnPlayerHitGround", "DRC_Footsteps_Landing", function(ply, water, floater, speed)
@@ -4091,13 +4260,13 @@ hook.Add( "PlayerTick", "drc_PlayerTickEvents", function(ply, cmd)
 			ply.TurnCD = CurTime() + 0.5
 			if ply:GetMoveType() == MOVETYPE_WALK && DRC:FloorDist(ply) < 15 then
 				local fs = DRC:GetFootsteps(ply)
-				local ss, so, vol, om = SelectFootstep(ply, true, fs, false, false, false, false)
+				local ss, so, vol, lvl, pitch, om = SelectFootstep(ply, true, fs, false, false, false, false)
 				if ss && vol then
-					vol = 100 * vol
-					ply:EmitSound(ss, vol)
+					--vol = 100 * vol
+					ply:EmitSound(ss, lvl, pitch, vol)
 					timer.Simple(0.4, function() if IsValid(ply) then
 						ss = SelectFootstep(ply, true, fs, false, false, false, false)
-						ply:EmitSound(ss, vol)
+						ply:EmitSound(ss, lvl, pitch, vol)
 					end end)
 				end
 			end

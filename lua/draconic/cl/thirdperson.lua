@@ -10,17 +10,20 @@ DRC.CalcView.ThirdPerson.LerpedZPos = 0
 DRC.CalcView.ThirdPerson.LerpedFinalAng = Angle()
 DRC.CalcView.ThirdPerson.LerpedFinalPos = Vector()
 DRC.CalcView.ThirdPerson.LerpedHitPosCorrection = Angle()
+DRC.CalcView.ThirdPerson.LerpLength = 100.0
 
 DRC.ThirdPerson.EditorSettings = {
 	["Length"] = 100,
 	["Height"] = 25,
 	["UseBaseOffsets"] = true,
 	["AllowFreeLook"] = true,
+	["AllowScrolling"] = true,
 	["Offset"] = Vector(0, 0, 0),
 	["LerpAngle"] = 0,
 	["LerpPos"] = 0.1,
 	["LerpTransition"] = 1,
 	["BaseFOV"] = 75,
+	["ScrollSpeed"] = 0.75,
 	["FocalPoint"] = 0, -- 0 player view, 1 hitpos, 2 head angle
 	["BasePoint"] = 0, -- 0 pelvis, 1 eyes, 2 origin
 	["ForceFreelook"] = false,
@@ -33,11 +36,13 @@ DRC.ThirdPerson.LoadedSettings = {
 	["Height"] = 25,
 	["UseBaseOffsets"] = true,
 	["AllowFreeLook"] = true,
+	["AllowScrolling"] = true,
 	["Offset"] = Vector(25, 0, 0),
 	["LerpAngle"] = 0,
 	["LerpPos"] = 0.1,
 	["LerpTransition"] = 1,
 	["BaseFOV"] = 75,
+	["ScrollSpeed"] = 0.75,
 	["FocalPoint"] = 0, -- 0 player view, 1 hitpos, 2 head angle
 	["BasePoint"] = 0, -- 0 pelvis, 1 eyes, 2 origin
 	["ForceFreelook"] = false,
@@ -49,11 +54,13 @@ DRC.ThirdPerson.LerpedSettings = {
 	["Height"] = 25,
 	["UseBaseOffsets"] = true,
 	["AllowFreeLook"] = true,
+	["AllowScrolling"] = true,
 	["Offset"] = Vector(25, 0, 0),
 	["LerpAngle"] = 0,
 	["LerpPos"] = 0.1,
 	["LerpTransition"] = 1,
 	["BaseFOV"] = 75,
+	["ScrollSpeed"] = 0.75,
 	["FocalPoint"] = 0, -- 0 player view, 1 hitpos, 2 head angle
 	["BasePoint"] = 0, -- 0 pelvis, 1 eyes, 2 origin
 	["ForceFreelook"] = false,
@@ -66,11 +73,13 @@ DRC.ThirdPerson.DefaultSettings = {
 	["Height"] = 25,
 	["UseBaseOffsets"] = true,
 	["AllowFreeLook"] = true,
+	["AllowScrolling"] = true,
 	["Offset"] = Vector(25, 0, 0),
 	["LerpAngle"] = 0,
 	["LerpPos"] = 0.1,
 	["LerpTransition"] = 1,
 	["BaseFOV"] = 75,
+	["ScrollSpeed"] = 0.75,
 	["FocalPoint"] = 0, -- 0 player view, 1 hitpos, 2 head angle
 	["BasePoint"] = 0, -- 0 pelvis, 1 eyes, 2 origin
 	["ForceFreelook"] = false,
@@ -88,6 +97,8 @@ if lastload && lastload != "" && file.Find("draconic/thirdperson/".. lastload ..
 		DRC:UpdateThirdPersonEditorMenu()
 	end
 end
+
+DRC.CalcView.ThirdPerson.LerpLength = DRC.ThirdPerson.LoadedSettings["Length"]
 
 function DRC:ThirdPerson_PokeLiveAngle(ply)
 	local wpn = ply:GetActiveWeapon()
@@ -214,8 +225,8 @@ hook.Add("CreateMove", "!drc_thirdpersoncontrol", function(cmd)
 		if DRC.MoveInfo.Forward != 0 then DRC:ThirdPerson_PokeLiveAngle(ply) end
 		if DRC.MoveInfo.Side != 0 then DRC:ThirdPerson_PokeLiveAngle(ply) end
 		
-		if IsValid(wpn) then
-			local ht = wpn:GetHoldType()
+		if IsValid(wpn) or (!IsValid(wpn) and ply:Alive() and !ply:InVehicle()) then
+			local ht = IsValid(wpn) and wpn:GetHoldType() or "normal"
 			
 			if fullranges[ht] && wpn.ThirdpersonNoFreelook != true && settings.AllowFreeLook == true then
 				DRC.CalcView.ThirdPerson.Directional = true
@@ -467,3 +478,24 @@ hook.Add("CalcView", "!drc_thirdperson", function(ply, pos, angles, fov)
 		return view
 	end
 end)
+
+hook.Add( "StartCommand", "!drc_thirdperson_scroll", function( ply, cmd )
+    if DRC:IsDraconicThirdPersonEnabled(ply) and DRC.ThirdPerson.LerpedSettings.AllowScrolling and !cmd:KeyDown( IN_USE ) and cmd:GetMouseWheel() != 0 then
+		local scrollMult = GetConVar("cl_drc_thirdperson_scrollspeed_mult"):GetFloat() == 0 and 0.2 or GetConVar("cl_drc_thirdperson_scrollspeed_mult"):GetFloat()
+        DRC.CalcView.ThirdPerson.LerpLength = math.Clamp( DRC.CalcView.ThirdPerson.LerpLength - cmd:GetMouseWheel() / scrollMult * DRC.ThirdPerson.LerpedSettings.ScrollSpeed, 0.0, 200.0 )
+    end
+end )
+
+hook.Add( "Think", "!drc_thirdperson_scroll_lerp", function()
+    if DRC.ThirdPerson.LerpedSettings.Length != DRC.CalcView.ThirdPerson.LerpLength then
+        local newLength = Lerp( 0.1, DRC.ThirdPerson.LerpedSettings.Length, DRC.CalcView.ThirdPerson.LerpLength )
+		DRC.ThirdPerson.LerpedSettings.Length = newLength
+		DRC.ThirdPerson.LoadedSettings.Length = newLength
+    end
+end )
+
+hook.Add( "PlayerBindPress", "!drc_thirdperson_scroll_supresswheel", function( ply, bind, pressed, code )
+    if DRC:IsDraconicThirdPersonEnabled(ply) and DRC.ThirdPerson.LerpedSettings.AllowScrolling and !ply:KeyDown( IN_USE ) and ( string.find( bind, "invprev" ) or string.find( bind, "invnext" ) ) then
+        return true
+    end
+end )

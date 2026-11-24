@@ -167,9 +167,11 @@ if CLIENT then
 	if GetConVar("cl_drc_testvar_8") == nil then CreateConVar("cl_drc_testvar_8", 0, {FCVAR_USERINFO}, "This variable is used to toggle experimental features, please use the menu to change these settings.", 0, 1) end
 	if GetConVar("cl_drc_testvar_9") == nil then CreateConVar("cl_drc_testvar_9", 0, {FCVAR_USERINFO}, "This variable is used to toggle experimental features, please use the menu to change these settings.", 0, 1) end
 	if GetConVar("cl_drc_thirdperson") == nil then CreateConVar("cl_drc_thirdperson", 0, {FCVAR_USERINFO, FCVAR_ARCHIVE}, "Enable/Disable Draconic Thirdperson.", 0, 1) end
+	if GetConVar("cl_drc_thirdperson_scrollspeed_mult") == nil then CreateConVar("cl_drc_thirdperson_scrollspeed_mult", "0.2", {FCVAR_USERINFO, FCVAR_ARCHIVE}, "Scroll speed mult.", 0.1, 10) end
 	if GetConVar("cl_drc_thirdperson_flipside") == nil then CreateConVar("cl_drc_thirdperson_flipside", 0, {FCVAR_USERINFO, FCVAR_ARCHIVE}, "Flip the thirdperson side the view is on.", 0, 1)	end
 	if GetConVar("cl_drc_thirdperson_disable_freelook") == nil then CreateConVar("cl_drc_thirdperson_disable_freelook", 0, {FCVAR_USERINFO, FCVAR_ARCHIVE}, "Disable freelook movement in third person.", 0, 1)	end
 	if GetConVar("cl_drc_thirdperson_preset") == nil then CreateConVar("cl_drc_thirdperson_preset", "", {FCVAR_USERINFO, FCVAR_ARCHIVE}, "Last loaded preset. Used to automatically select this at session start.") end
+	if GetConVar("cl_drc_thirdperson_preset_cycle") == nil then CreateConVar("cl_drc_thirdperson_preset_cycle", "", {FCVAR_USERINFO, FCVAR_ARCHIVE}, "Presets to cycle through with the draconic_thirdperson_cycle command. Presets are seperated by a \",\" character.") end
 	DRC.Convars_CL.ForceEFP = false
 
 --	if GetConVar("cl_drc_sway") == nil then CreateConVar("cl_drc_sway", 1, {FCVAR_USERINFO, FCVAR_ARCHIVE}, "Enable/disable predictive-aim weapon swaying", 0, 1)end

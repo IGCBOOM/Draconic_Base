@@ -683,6 +683,7 @@ function DRC:UpdateThirdPersonEditorMenu()
 		local Derma = DRC.ThirdPerson.EditorMenu
 		Derma.offsets:SetValue(DRC.ThirdPerson.EditorSettings.UseBaseOffsets)
 		Derma.freelook:SetValue(DRC.ThirdPerson.EditorSettings.AllowFreeLook)
+		Derma.scrolling:SetValue(DRC.ThirdPerson.EditorSettings.AllowScrolling)
 		Derma.cameraz:SetValue(DRC.ThirdPerson.EditorSettings.Height)
 		Derma.cameray:SetValue(DRC.ThirdPerson.EditorSettings.Length)
 		Derma.sliderx:SetValue(DRC.ThirdPerson.EditorSettings.Offset.X)
@@ -691,6 +692,7 @@ function DRC:UpdateThirdPersonEditorMenu()
 		Derma.sliderfov:SetValue(DRC.ThirdPerson.EditorSettings.BaseFOV)
 		Derma.sliderlerppos:SetValue(DRC.ThirdPerson.EditorSettings.LerpPos)
 		Derma.sliderlerpang:SetValue(DRC.ThirdPerson.EditorSettings.LerpAngle)
+		Derma.sliderscrollspeed:SetValue(DRC.ThirdPerson.EditorSettings.ScrollSpeed)
 		Derma.ddorigin:SetValue(DRC.ThirdPerson.EditorSettings.BasePoint)
 		Derma.ddfocal:SetValue(DRC.ThirdPerson.EditorSettings.FocalPoint)
 	end
@@ -718,6 +720,7 @@ function DRC:CreateThirdPersonPresetMenu(parent, iseditor)
 		DRC.ThirdPerson.LoadedSettings.LerpPos = 1
 		DRC.ThirdPerson.LoadedSettings.LerpAngle = 1
 		table.CopyFromTo(SelectedPreset, DRC.ThirdPerson.LoadedSettings)
+		DRC.CalcView.ThirdPerson.LerpLength = DRC.ThirdPerson.LoadedSettings.Length
 		if iseditor == true then table.CopyFromTo(SelectedPreset, DRC.ThirdPerson.EditorSettings) DRC:UpdateThirdPersonEditorMenu() end
 		RunConsoleCommand("cl_drc_thirdperson_preset", SelectedPresetName)
 	end
@@ -855,6 +858,7 @@ function DRC:SaveThirdPersonPrompt(isnew, old)
 			DRC:SaveThirdPersonPreset(DRC.ThirdPerson.EditorSettings, TextBox:GetValue())
 			Frame:Remove()
 			table.CopyFromTo(DRC.ThirdPerson.EditorSettings, DRC.ThirdPerson.LoadedSettings)
+			DRC.CalcView.ThirdPerson.LerpLength = DRC.ThirdPerson.LoadedSettings.Length
 			LocalPlayer():ChatPrint("Preset saved & applied.")
 		end
 		
@@ -892,6 +896,7 @@ function DRC:SaveThirdPersonPrompt(isnew, old)
 			DRC:SaveThirdPersonPreset(DRC.ThirdPerson.EditorSettings, old)
 			Frame:Remove()
 			table.CopyFromTo(DRC.ThirdPerson.EditorSettings, DRC.ThirdPerson.LoadedSettings)
+			DRC.CalcView.ThirdPerson.LerpLength = DRC.ThirdPerson.LoadedSettings.Length
 			LocalPlayer():ChatPrint("Preset saved & applied.")
 		end
 		
@@ -1758,6 +1763,58 @@ end
 
 concommand.Add("draconic_thirdperson", function()
 	DRC:ToggleThirdperson()
+end)
+
+concommand.Add("draconic_thirdperson_cycle", function()
+	
+	local curCyclerTbl = string.Split(GetConVar("cl_drc_thirdperson_preset_cycle"):GetString(), ",")
+	local presetConVar = GetConVar("cl_drc_thirdperson_preset")
+	local presetConVarVal = presetConVar:GetString()
+
+	local cyclerTblLen = #curCyclerTbl
+
+	if cyclerTblLen == 0 then return end
+
+	if cyclerTblLen == 1 then
+		local newVal = curCyclerTbl[1]
+		presetConVar:SetString(newVal)
+		DRC.ThirdPerson.LoadedSettings.LerpPos = 1
+		DRC.ThirdPerson.LoadedSettings.LerpAngle = 1
+		local loadedpreset = file.Read("draconic/thirdperson/".. string.lower(newVal) ..".json", "DATA")
+		local tbl = util.JSONToTable(loadedpreset)
+		table.CopyFromTo(tbl, DRC.ThirdPerson.LoadedSettings)
+		DRC.CalcView.ThirdPerson.LerpLength = DRC.ThirdPerson.LoadedSettings.Length
+		return
+	end
+
+	local foundKey = 0
+
+	for k, v in pairs(curCyclerTbl) do
+		if v == presetConVarVal then
+			foundKey = k
+		end
+	end
+
+	if foundKey == cyclerTblLen then
+		local newVal = curCyclerTbl[1]
+		presetConVar:SetString(newVal)
+		DRC.ThirdPerson.LoadedSettings.LerpPos = 1
+		DRC.ThirdPerson.LoadedSettings.LerpAngle = 1
+		local loadedpreset = file.Read("draconic/thirdperson/".. string.lower(newVal) ..".json", "DATA")
+		local tbl = util.JSONToTable(loadedpreset)
+		table.CopyFromTo(tbl, DRC.ThirdPerson.LoadedSettings)
+		DRC.CalcView.ThirdPerson.LerpLength = DRC.ThirdPerson.LoadedSettings.Length
+	else
+		local newVal = curCyclerTbl[foundKey + 1]
+		presetConVar:SetString(newVal)
+		DRC.ThirdPerson.LoadedSettings.LerpPos = 1
+		DRC.ThirdPerson.LoadedSettings.LerpAngle = 1
+		local loadedpreset = file.Read("draconic/thirdperson/".. string.lower(newVal) ..".json", "DATA")
+		local tbl = util.JSONToTable(loadedpreset)
+		table.CopyFromTo(tbl, DRC.ThirdPerson.LoadedSettings)
+		DRC.CalcView.ThirdPerson.LerpLength = DRC.ThirdPerson.LoadedSettings.Length
+	end
+
 end)
 
 concommand.Add("draconic_thirdperson_swapshoulder", function()
